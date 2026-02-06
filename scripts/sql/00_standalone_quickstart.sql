@@ -402,25 +402,29 @@ FROM PRODUCTION.SUBSTATIONS s;
 
 -- Vegetation Risk
 CREATE OR REPLACE VIEW VEGETATION_RISK_COMPUTED AS
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 5000))
+)
 SELECT
-    'VEG_' || SEQ4() AS TREE_ID,
-    CASE MOD(SEQ4(), 5)
+    'VEG_' || rn AS TREE_ID,
+    CASE MOD(rn, 5)
         WHEN 0 THEN 'Oak' WHEN 1 THEN 'Pine' WHEN 2 THEN 'Maple'
         WHEN 3 THEN 'Cypress' ELSE 'Elm'
     END AS SPECIES,
-    -95.7 + RANDOM() * 0.7 AS LONGITUDE,
-    29.7 + RANDOM() * 0.3 AS LATITUDE,
-    ROUND(8 + RANDOM() * 25, 1) AS HEIGHT_M,
-    ROUND(RANDOM(), 3) AS RISK_SCORE,
+    -95.7 + UNIFORM(0::FLOAT, 0.7::FLOAT, RANDOM()) AS LONGITUDE,
+    29.7 + UNIFORM(0::FLOAT, 0.3::FLOAT, RANDOM()) AS LATITUDE,
+    ROUND(8 + UNIFORM(0::FLOAT, 25::FLOAT, RANDOM()), 1) AS HEIGHT_M,
+    ROUND(UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()), 3) AS RISK_SCORE,
     CASE 
-        WHEN RANDOM() < 0.03 THEN 'critical'
-        WHEN RANDOM() < 0.10 THEN 'warning'
-        WHEN RANDOM() < 0.25 THEN 'monitor'
+        WHEN UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()) < 0.03 THEN 'critical'
+        WHEN UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()) < 0.10 THEN 'warning'
+        WHEN UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()) < 0.25 THEN 'monitor'
         ELSE 'safe'
     END AS RISK_LEVEL,
-    ROUND(2 + RANDOM() * 50, 1) AS DISTANCE_TO_LINE_M,
+    ROUND(2 + UNIFORM(0::FLOAT, 50::FLOAT, RANDOM()), 1) AS DISTANCE_TO_LINE_M,
     CURRENT_TIMESTAMP() AS COMPUTED_AT
-FROM TABLE(GENERATOR(ROWCOUNT => 5000));
+FROM numbered_rows;
 
 -- Vegetation Risk Enhanced Table (for external data processing)
 CREATE TABLE IF NOT EXISTS VEGETATION_RISK_ENHANCED (
@@ -538,7 +542,6 @@ CREATE TABLE IF NOT EXISTS NODE_CENTRALITY_FEATURES_V2 (
     PAGERANK_SCORE FLOAT,
     CASCADE_IMPACT_SCORE FLOAT,
     VULNERABILITY_SCORE FLOAT,
-    CASCADE_RISK_SCORE_NORMALIZED FLOAT,
     CRITICALITY_RANK INT,
     NODE_TYPE VARCHAR(20),
     SUBSTATION_ID VARCHAR(50),
@@ -566,7 +569,6 @@ CREATE TABLE IF NOT EXISTS GNN_PREDICTIONS (
     FAILURE_PROBABILITY_1H FLOAT,
     FAILURE_PROBABILITY_24H FLOAT,
     CASCADE_RISK_SCORE FLOAT,
-    GNN_CASCADE_RISK FLOAT,
     RISK_TIER VARCHAR(20),
     PRIMARY KEY (NODE_ID, PREDICTION_TIMESTAMP)
 );
@@ -598,112 +600,140 @@ USE SCHEMA PRODUCTION;
 
 -- Insert sample substations (Houston area)
 INSERT INTO SUBSTATIONS (SUBSTATION_ID, SUBSTATION_NAME, LATITUDE, LONGITUDE, CAPACITY_MVA, VOLTAGE_CLASS, REGION, OPERATIONAL_STATUS)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 25))
+)
 SELECT 
-    'SUB_' || LPAD(SEQ4()::VARCHAR, 4, '0'),
-    CASE MOD(SEQ4(), 10)
+    'SUB_' || LPAD(rn::VARCHAR, 4, '0'),
+    CASE MOD(rn, 10)
         WHEN 0 THEN 'Downtown' WHEN 1 THEN 'Midtown' WHEN 2 THEN 'Heights'
         WHEN 3 THEN 'Montrose' WHEN 4 THEN 'River Oaks' WHEN 5 THEN 'Memorial'
         WHEN 6 THEN 'Galleria' WHEN 7 THEN 'Westchase' WHEN 8 THEN 'Energy Corridor'
         ELSE 'Katy'
-    END || ' Substation ' || SEQ4(),
-    29.7 + RANDOM() * 0.3,
-    -95.7 + RANDOM() * 0.7,
-    ROUND(50 + RANDOM() * 150, 0),
-    CASE MOD(SEQ4(), 3) WHEN 0 THEN '138KV' WHEN 1 THEN '69KV' ELSE '34.5KV' END,
+    END || ' Substation ' || rn,
+    29.7 + UNIFORM(0::FLOAT, 0.3::FLOAT, RANDOM()),
+    -95.7 + UNIFORM(0::FLOAT, 0.7::FLOAT, RANDOM()),
+    ROUND(50 + UNIFORM(0::FLOAT, 150::FLOAT, RANDOM()), 0),
+    CASE MOD(rn, 3) WHEN 0 THEN '138KV' WHEN 1 THEN '69KV' ELSE '34.5KV' END,
     'HOUSTON_METRO',
     'ACTIVE'
-FROM TABLE(GENERATOR(ROWCOUNT => 25))
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM SUBSTATIONS LIMIT 1);
 
 -- Insert sample transformers
 INSERT INTO TRANSFORMER_METADATA (TRANSFORMER_ID, TRANSFORMER_NAME, SUBSTATION_ID, LATITUDE, LONGITUDE, CAPACITY_KVA, PRIMARY_VOLTAGE_KV, INSTALL_YEAR, HEALTH_SCORE)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 100))
+)
 SELECT 
-    'TRF_' || LPAD(SEQ4()::VARCHAR, 6, '0'),
-    'Transformer ' || SEQ4(),
+    'TRF_' || LPAD(rn::VARCHAR, 6, '0'),
+    'Transformer ' || rn,
     (SELECT SUBSTATION_ID FROM SUBSTATIONS ORDER BY RANDOM() LIMIT 1),
-    29.7 + RANDOM() * 0.3,
-    -95.7 + RANDOM() * 0.7,
-    CASE MOD(SEQ4(), 4) WHEN 0 THEN 50 WHEN 1 THEN 100 WHEN 2 THEN 250 ELSE 500 END,
+    29.7 + UNIFORM(0::FLOAT, 0.3::FLOAT, RANDOM()),
+    -95.7 + UNIFORM(0::FLOAT, 0.7::FLOAT, RANDOM()),
+    CASE MOD(rn, 4) WHEN 0 THEN 50 WHEN 1 THEN 100 WHEN 2 THEN 250 ELSE 500 END,
     12.47,
-    2000 + FLOOR(RANDOM() * 24),
-    ROUND(60 + RANDOM() * 40, 1)
-FROM TABLE(GENERATOR(ROWCOUNT => 100))
+    2000 + FLOOR(UNIFORM(0::FLOAT, 24::FLOAT, RANDOM())),
+    ROUND(60 + UNIFORM(0::FLOAT, 40::FLOAT, RANDOM()), 1)
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER_METADATA LIMIT 1);
 
 -- Insert sample circuits
 INSERT INTO CIRCUIT_METADATA (CIRCUIT_ID, CIRCUIT_NAME, SUBSTATION_ID, VOLTAGE_CLASS, LENGTH_MILES, STATUS)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 50))
+)
 SELECT 
-    'CKT_' || LPAD(SEQ4()::VARCHAR, 4, '0'),
-    'Feeder ' || SEQ4(),
+    'CKT_' || LPAD(rn::VARCHAR, 4, '0'),
+    'Feeder ' || rn,
     (SELECT SUBSTATION_ID FROM SUBSTATIONS ORDER BY RANDOM() LIMIT 1),
-    CASE MOD(SEQ4(), 3) WHEN 0 THEN '4KV' WHEN 1 THEN '12KV' ELSE '25KV' END,
-    ROUND(2 + RANDOM() * 15, 2),
+    CASE MOD(rn, 3) WHEN 0 THEN '4KV' WHEN 1 THEN '12KV' ELSE '25KV' END,
+    ROUND(2 + UNIFORM(0::FLOAT, 15::FLOAT, RANDOM()), 2),
     'ENERGIZED'
-FROM TABLE(GENERATOR(ROWCOUNT => 50))
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM CIRCUIT_METADATA LIMIT 1);
 
 -- Insert sample meters
 INSERT INTO METER_INFRASTRUCTURE (METER_ID, METER_NUMBER, TRANSFORMER_ID, CIRCUIT_ID, LATITUDE, LONGITUDE, METER_TYPE, STATUS, CUSTOMER_CLASS)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 500))
+)
 SELECT 
-    'MTR_' || LPAD(SEQ4()::VARCHAR, 8, '0'),
-    'M' || LPAD(SEQ4()::VARCHAR, 10, '0'),
+    'MTR_' || LPAD(rn::VARCHAR, 8, '0'),
+    'M' || LPAD(rn::VARCHAR, 10, '0'),
     (SELECT TRANSFORMER_ID FROM TRANSFORMER_METADATA ORDER BY RANDOM() LIMIT 1),
     (SELECT CIRCUIT_ID FROM CIRCUIT_METADATA ORDER BY RANDOM() LIMIT 1),
-    29.7 + RANDOM() * 0.3,
-    -95.7 + RANDOM() * 0.7,
+    29.7 + UNIFORM(0::FLOAT, 0.3::FLOAT, RANDOM()),
+    -95.7 + UNIFORM(0::FLOAT, 0.7::FLOAT, RANDOM()),
     'SMART_METER',
     'ACTIVE',
-    CASE MOD(SEQ4(), 10) WHEN 0 THEN 'COMMERCIAL' WHEN 1 THEN 'INDUSTRIAL' ELSE 'RESIDENTIAL' END
-FROM TABLE(GENERATOR(ROWCOUNT => 500))
+    CASE MOD(rn, 10) WHEN 0 THEN 'COMMERCIAL' WHEN 1 THEN 'INDUSTRIAL' ELSE 'RESIDENTIAL' END
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM METER_INFRASTRUCTURE LIMIT 1);
 
 -- Insert sample outages
 INSERT INTO OUTAGE_RESTORATION_TRACKER (OUTAGE_ID, CIRCUIT_ID, SUBSTATION_ID, OUTAGE_START_TIME, STATUS, CAUSE, AFFECTED_CUSTOMERS, AFFECTED_TRANSFORMERS, CREW_ASSIGNED, ESTIMATED_RESTORATION)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 15))
+)
 SELECT 
-    'OUT_' || SEQ4(),
+    'OUT_' || rn,
     (SELECT CIRCUIT_ID FROM CIRCUIT_METADATA ORDER BY RANDOM() LIMIT 1),
     (SELECT SUBSTATION_ID FROM SUBSTATIONS ORDER BY RANDOM() LIMIT 1),
-    DATEADD('hour', -FLOOR(RANDOM() * 24)::INT, CURRENT_TIMESTAMP()),
-    CASE MOD(SEQ4(), 5) WHEN 0 THEN 'ACTIVE' WHEN 1 THEN 'INVESTIGATING' ELSE 'RESTORED' END,
-    CASE MOD(SEQ4(), 5) WHEN 0 THEN 'EQUIPMENT_FAILURE' WHEN 1 THEN 'WEATHER' WHEN 2 THEN 'VEGETATION' WHEN 3 THEN 'ANIMAL' ELSE 'UNKNOWN' END,
-    FLOOR(50 + RANDOM() * 500)::INT,
-    FLOOR(1 + RANDOM() * 10)::INT,
-    'CREW_' || FLOOR(RANDOM() * 20)::VARCHAR,
-    DATEADD('hour', FLOOR(RANDOM() * 4)::INT, CURRENT_TIMESTAMP())
-FROM TABLE(GENERATOR(ROWCOUNT => 15))
+    DATEADD('hour', -FLOOR(UNIFORM(0::FLOAT, 24::FLOAT, RANDOM()))::INT, CURRENT_TIMESTAMP()),
+    CASE MOD(rn, 5) WHEN 0 THEN 'ACTIVE' WHEN 1 THEN 'INVESTIGATING' ELSE 'RESTORED' END,
+    CASE MOD(rn, 5) WHEN 0 THEN 'EQUIPMENT_FAILURE' WHEN 1 THEN 'WEATHER' WHEN 2 THEN 'VEGETATION' WHEN 3 THEN 'ANIMAL' ELSE 'UNKNOWN' END,
+    FLOOR(50 + UNIFORM(0::FLOAT, 500::FLOAT, RANDOM()))::INT,
+    FLOOR(1 + UNIFORM(0::FLOAT, 10::FLOAT, RANDOM()))::INT,
+    'CREW_' || FLOOR(UNIFORM(0::FLOAT, 20::FLOAT, RANDOM()))::VARCHAR,
+    DATEADD('hour', FLOOR(UNIFORM(0::FLOAT, 4::FLOAT, RANDOM()))::INT, CURRENT_TIMESTAMP())
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM OUTAGE_RESTORATION_TRACKER LIMIT 1);
 
 -- Insert sample work orders
 INSERT INTO WORK_ORDERS (WORK_ORDER_ID, ASSET_TYPE, ASSET_ID, WORK_TYPE, PRIORITY, STATUS, DESCRIPTION, ASSIGNED_CREW, SCHEDULED_DATE, ESTIMATED_HOURS)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 30))
+)
 SELECT 
-    'WO_' || SEQ4(),
-    CASE MOD(SEQ4(), 4) WHEN 0 THEN 'TRANSFORMER' WHEN 1 THEN 'POLE' WHEN 2 THEN 'METER' ELSE 'CIRCUIT' END,
-    'ASSET_' || FLOOR(RANDOM() * 1000)::VARCHAR,
-    CASE MOD(SEQ4(), 4) WHEN 0 THEN 'MAINTENANCE' WHEN 1 THEN 'REPAIR' WHEN 2 THEN 'INSPECTION' ELSE 'REPLACEMENT' END,
-    CASE MOD(SEQ4(), 4) WHEN 0 THEN 'CRITICAL' WHEN 1 THEN 'HIGH' WHEN 2 THEN 'MEDIUM' ELSE 'LOW' END,
-    CASE MOD(SEQ4(), 4) WHEN 0 THEN 'OPEN' WHEN 1 THEN 'ASSIGNED' WHEN 2 THEN 'IN_PROGRESS' ELSE 'COMPLETED' END,
-    'Scheduled maintenance task ' || SEQ4(),
-    'CREW_' || FLOOR(RANDOM() * 10)::VARCHAR,
-    DATEADD('day', FLOOR(RANDOM() * 14)::INT, CURRENT_DATE()),
-    ROUND(1 + RANDOM() * 8, 1)
-FROM TABLE(GENERATOR(ROWCOUNT => 30))
+    'WO_' || rn,
+    CASE MOD(rn, 4) WHEN 0 THEN 'TRANSFORMER' WHEN 1 THEN 'POLE' WHEN 2 THEN 'METER' ELSE 'CIRCUIT' END,
+    'ASSET_' || FLOOR(UNIFORM(0::FLOAT, 1000::FLOAT, RANDOM()))::VARCHAR,
+    CASE MOD(rn, 4) WHEN 0 THEN 'MAINTENANCE' WHEN 1 THEN 'REPAIR' WHEN 2 THEN 'INSPECTION' ELSE 'REPLACEMENT' END,
+    CASE MOD(rn, 4) WHEN 0 THEN 'CRITICAL' WHEN 1 THEN 'HIGH' WHEN 2 THEN 'MEDIUM' ELSE 'LOW' END,
+    CASE MOD(rn, 4) WHEN 0 THEN 'OPEN' WHEN 1 THEN 'ASSIGNED' WHEN 2 THEN 'IN_PROGRESS' ELSE 'COMPLETED' END,
+    'Scheduled maintenance task ' || rn,
+    'CREW_' || FLOOR(UNIFORM(0::FLOAT, 10::FLOAT, RANDOM()))::VARCHAR,
+    DATEADD('day', FLOOR(UNIFORM(0::FLOAT, 14::FLOAT, RANDOM()))::INT, CURRENT_DATE()),
+    ROUND(1 + UNIFORM(0::FLOAT, 8::FLOAT, RANDOM()), 1)
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM WORK_ORDERS LIMIT 1);
 
 -- Insert sample grid poles
 INSERT INTO GRID_POLES_INFRASTRUCTURE (POLE_ID, TRANSFORMER_ID, SUBSTATION_ID, CIRCUIT_ID, LATITUDE, LONGITUDE, POLE_HEIGHT_FT, POLE_MATERIAL, POLE_CLASS, HEALTH_SCORE, CONDITION_STATUS)
+WITH numbered_rows AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
+    FROM TABLE(GENERATOR(ROWCOUNT => 200))
+)
 SELECT 
-    'POLE_' || LPAD(SEQ4()::VARCHAR, 6, '0'),
+    'POLE_' || LPAD(rn::VARCHAR, 6, '0'),
     (SELECT TRANSFORMER_ID FROM TRANSFORMER_METADATA ORDER BY RANDOM() LIMIT 1),
     (SELECT SUBSTATION_ID FROM SUBSTATIONS ORDER BY RANDOM() LIMIT 1),
     (SELECT CIRCUIT_ID FROM CIRCUIT_METADATA ORDER BY RANDOM() LIMIT 1),
-    29.7 + RANDOM() * 0.3,
-    -95.7 + RANDOM() * 0.7,
-    FLOOR(35 + RANDOM() * 30)::INT,
-    CASE MOD(SEQ4(), 3) WHEN 0 THEN 'WOOD' WHEN 1 THEN 'STEEL' ELSE 'CONCRETE' END,
-    CASE MOD(SEQ4(), 5) WHEN 0 THEN 'H1' WHEN 1 THEN 'H2' WHEN 2 THEN 'H3' WHEN 3 THEN 'H4' ELSE 'H5' END,
-    ROUND(60 + RANDOM() * 40, 2),
-    CASE WHEN RANDOM() > 0.2 THEN 'GOOD' WHEN RANDOM() > 0.5 THEN 'FAIR' ELSE 'POOR' END
-FROM TABLE(GENERATOR(ROWCOUNT => 200))
+    29.7 + UNIFORM(0::FLOAT, 0.3::FLOAT, RANDOM()),
+    -95.7 + UNIFORM(0::FLOAT, 0.7::FLOAT, RANDOM()),
+    FLOOR(35 + UNIFORM(0::FLOAT, 30::FLOAT, RANDOM()))::INT,
+    CASE MOD(rn, 3) WHEN 0 THEN 'WOOD' WHEN 1 THEN 'STEEL' ELSE 'CONCRETE' END,
+    CASE MOD(rn, 5) WHEN 0 THEN 'H1' WHEN 1 THEN 'H2' WHEN 2 THEN 'H3' WHEN 3 THEN 'H4' ELSE 'H5' END,
+    ROUND(60 + UNIFORM(0::FLOAT, 40::FLOAT, RANDOM()), 2),
+    CASE WHEN UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()) > 0.2 THEN 'GOOD' WHEN UNIFORM(0::FLOAT, 1::FLOAT, RANDOM()) > 0.5 THEN 'FAIR' ELSE 'POOR' END
+FROM numbered_rows
 WHERE NOT EXISTS (SELECT 1 FROM GRID_POLES_INFRASTRUCTURE LIMIT 1);
 
 -- ============================================================================
@@ -788,7 +818,7 @@ WHERE NOT EXISTS (SELECT 1 FROM T_TRANSFORMER_TEMPORAL_TRAINING LIMIT 1);
 USE SCHEMA CASCADE_ANALYSIS;
 
 -- Insert node centrality features
-INSERT INTO NODE_CENTRALITY_FEATURES_V2 (NODE_ID, DEGREE_CENTRALITY, BETWEENNESS_CENTRALITY, CLOSENESS_CENTRALITY, PAGERANK_SCORE, CASCADE_IMPACT_SCORE, VULNERABILITY_SCORE, CASCADE_RISK_SCORE_NORMALIZED, CRITICALITY_RANK, NODE_TYPE, SUBSTATION_ID)
+INSERT INTO NODE_CENTRALITY_FEATURES_V2 (NODE_ID, DEGREE_CENTRALITY, BETWEENNESS_CENTRALITY, CLOSENESS_CENTRALITY, PAGERANK_SCORE, CASCADE_IMPACT_SCORE, VULNERABILITY_SCORE, CRITICALITY_RANK, NODE_TYPE, SUBSTATION_ID)
 SELECT 
     NODE_ID,
     DEGREE_CENTRALITY,
@@ -797,7 +827,6 @@ SELECT
     ROUND(RANDOM() * 0.02 + 0.001, 6),
     ROUND(RANDOM() * 100, 2),
     ROUND(RANDOM() * 0.8 + 0.1, 3),
-    ROUND(RANDOM() * 0.9 + 0.1, 4),
     ROW_NUMBER() OVER (ORDER BY BETWEENNESS_CENTRALITY DESC),
     NODE_TYPE,
     SUBSTATION_ID
@@ -816,7 +845,7 @@ SELECT
     ROUND(s.CAPACITY_MVA * (0.3 + RANDOM() * 0.5), 2),
     PARSE_JSON('[{"node": "' || s.SUBSTATION_ID || '", "depth": 0}, {"node": "downstream", "depth": 1}]'),
     FLOOR(2 + RANDOM() * 4)::INT,
-    CASE MOD(SEQ4(), 3) 
+    CASE MOD(ROW_NUMBER() OVER (ORDER BY s.SUBSTATION_ID), 3) 
         WHEN 0 THEN 'PEAK_SUMMER'
         WHEN 1 THEN 'STORM_EVENT'
         ELSE 'EQUIPMENT_FAILURE'
@@ -849,6 +878,8 @@ SET postgres_version = 17;     -- 16, 17, or 18
 
 -- Switch to ACCOUNTADMIN for network policy and Postgres creation
 USE ROLE ACCOUNTADMIN;
+USE DATABASE IDENTIFIER($database_name);
+USE SCHEMA PUBLIC;
 
 -- Create network rule for Postgres ingress (allows connections to the instance)
 -- MODE = POSTGRES_INGRESS is required for Snowflake Postgres instances
@@ -860,45 +891,66 @@ CREATE NETWORK RULE IF NOT EXISTS IDENTIFIER($postgres_ingress_rule)
     COMMENT = 'Allow ingress traffic to Flux Ops Center Postgres instance';
 
 -- Create network policy that uses the ingress rule
-CREATE NETWORK POLICY IF NOT EXISTS IDENTIFIER($postgres_network_policy)
-    ALLOWED_NETWORK_RULE_LIST = (IDENTIFIER($postgres_ingress_rule))
-    COMMENT = 'Network policy for Flux Ops Center Postgres instance';
+-- Using EXECUTE IMMEDIATE to build fully qualified network rule name dynamically
+SET create_policy_sql = 
+    'CREATE OR REPLACE NETWORK POLICY ' || $postgres_network_policy || 
+    ' ALLOWED_NETWORK_RULE_LIST = (' || CURRENT_DATABASE() || '.PUBLIC.' || $postgres_ingress_rule || ')' ||
+    ' COMMENT = ''Network policy for Flux Ops Center Postgres instance''';
 
--- Check if Postgres instance already exists before creating
--- Note: This uses a SHOW command pattern since IF NOT EXISTS is not supported
-SET existing_pg_count = (
-    SELECT COUNT(*) 
-    FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()))
-    WHERE "name" = $postgres_instance_name
-);
-
--- Display info about creating Postgres instance
-SELECT 
-    '=== SNOWFLAKE POSTGRES SETUP ===' AS INFO,
-    'Creating Postgres instance: ' || $postgres_instance_name AS INSTANCE_NAME,
-    'Compute Family: ' || $postgres_compute_family AS COMPUTE,
-    'Storage: ' || $postgres_storage_gb || ' GB' AS STORAGE,
-    'Network Policy: ' || $postgres_network_policy AS NETWORK_POLICY;
-
--- Create Postgres instance
--- IMPORTANT: Save the credentials displayed after creation - they cannot be retrieved later!
--- The command returns: status, host, access_roles (with snowflake_admin and application credentials)
-CREATE POSTGRES INSTANCE IF NOT EXISTS IDENTIFIER($postgres_instance_name)
-    COMPUTE_FAMILY = $postgres_compute_family
-    STORAGE_SIZE_GB = $postgres_storage_gb
-    AUTHENTICATION_AUTHORITY = POSTGRES
-    POSTGRES_VERSION = $postgres_version
-    NETWORK_POLICY = $postgres_network_policy
-    HIGH_AVAILABILITY = FALSE
-    COMMENT = 'Flux Ops Center operational database for real-time queries and PostGIS';
-
--- Show Postgres instance details
-SHOW POSTGRES INSTANCES LIKE $postgres_instance_name;
+EXECUTE IMMEDIATE $create_policy_sql;
 
 -- ============================================================================
--- SECTION 8: POSTGRES DATA SYNC PROCEDURES
+-- OPTIONAL: Snowflake Postgres Setup
+-- ============================================================================
+-- The Flux Operations Center can use Snowflake Postgres for fast spatial queries.
+-- This section is OPTIONAL and can be skipped if you want to use Snowflake only.
+--
+-- To create the Postgres instance manually, run:
+--
+-- CREATE POSTGRES INSTANCE FLUX_OPS_POSTGRES
+--     COMPUTE_FAMILY = HIGHMEM_XL
+--     STORAGE_SIZE_GB = 100
+--     AUTHENTICATION_AUTHORITY = POSTGRES
+--     POSTGRES_VERSION = 17
+--     NETWORK_POLICY = FLUX_POSTGRES_NETWORK_POLICY
+--     HIGH_AVAILABILITY = FALSE
+--     COMMENT = 'Flux Ops Center operational database for real-time queries and PostGIS';
+--
+-- IMPORTANT: Save the credentials displayed after creation - they cannot be retrieved later!
+-- After creation, you'll need to load PostGIS data:
+--   python backend/scripts/load_postgis_data.py --service your_pg_service
+--
+-- Uncomment the section below to automatically create the Postgres instance:
+-- (Note: This may take 5-10 minutes and requires ACCOUNTADMIN privileges)
+-- ============================================================================
+
+/*
+EXECUTE IMMEDIATE $$
+    CREATE POSTGRES INSTANCE IF NOT EXISTS FLUX_OPS_POSTGRES
+        COMPUTE_FAMILY = HIGHMEM_XL
+        STORAGE_SIZE_GB = 100
+        AUTHENTICATION_AUTHORITY = POSTGRES
+        POSTGRES_VERSION = 17
+        NETWORK_POLICY = FLUX_POSTGRES_NETWORK_POLICY
+        HIGH_AVAILABILITY = FALSE
+        COMMENT = 'Flux Ops Center operational database for real-time queries and PostGIS'
+$$;
+*/
+
+-- ============================================================================
+-- NOTE: Postgres setup is optional and commented out above
+-- If you created the Postgres instance, you can:
+--   1. Run: SHOW POSTGRES INSTANCES; to view details and get credentials
+--   2. Load spatial data: python backend/scripts/load_postgis_data.py
+-- ============================================================================
+
+/*
+-- ============================================================================
+-- SECTION 8: POSTGRES DATA SYNC PROCEDURES (OPTIONAL - REQUIRES POSTGRES INSTANCE)
 -- ============================================================================
 -- These procedures sync data from Snowflake tables to Postgres for real-time access
+-- Uncomment this section if you created the Postgres instance above
+--
 -- Uses Snowflake's native Postgres connectivity
 
 USE DATABASE IDENTIFIER($database_name);
